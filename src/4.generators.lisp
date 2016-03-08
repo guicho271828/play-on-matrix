@@ -26,7 +26,7 @@
                       (setf (aref mc row col) cell))))
                 mc))))
 
-(defun make-unroll-gemm (x y z)
+(defun make-unroll-gemm-k (x y z)
   (check-type x integer)
   (check-type y integer)
   (check-type z integer)
@@ -45,3 +45,34 @@
                         (incf (row-major-aref mc mc-index)
                               (* cell (row-major-aref mb mb-index)))))))
                 mc))))
+
+(defun make-unroll-gemm-k2 (x y z)
+  (check-type x integer)
+  (check-type y integer)
+  (check-type z integer)
+  (compile nil
+           `(lambda (ma mb mc)
+              (declare (optimize (speed 3) (debug 0) (safety 0) (space 0)))
+              (declare (type (matrix 500 500) ma mb mc))
+              (symbol-macrolet ((ui ,x) (uk ,y) (uj ,z))
+                (let ((rows (array-dimension ma 0))
+                      (cols (array-dimension mb 1)))
+                  (declare (type fixnum rows cols))
+                  ;; (dotimes-unroll3 ((row) (rows ui)) ()
+                  ;;   (dotimes-unroll3 ((k) (cols uk)) ()
+                  (dotimes (row rows)
+                    (dotimes (k cols)
+                      (let ((cell (aref ma row k))
+                            (mb-index (array-row-major-index mb k 0))
+                            (mc-index (array-row-major-index mc row 0)))
+                        (declare (type fixnum mb-index mc-index))
+                        (dotimes-unroll3 ((col delta) (cols uj))
+                            ((incf mb-index delta)
+                             (incf mc-index delta))
+                          (sb-kernel:data-vector-set-with-offset
+                           (sb-kernel:%array-data-vector mc) mc-index col
+                           (+ (sb-kernel:data-vector-ref-with-offset
+                               (sb-kernel:%array-data-vector mc) mc-index col)
+                              (* cell (sb-kernel:data-vector-ref-with-offset
+                                       (sb-kernel:%array-data-vector mb) mb-index col)))))))))))))
+

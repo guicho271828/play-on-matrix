@@ -14,17 +14,17 @@
                          (list x (/ y 2) z)
                          (list (/ x 2) y z)))))
 
-(defun evaluate-unrolling (generator x y z)
-  (let ((f (funcall generator x y z)))
-    (benchmark (10) (funcall f *ma* *mb* *mc*))))
+(defun evaluate-unrolling (generator inputs parameters)
+  (format t "~&testing ~a ..." parameters)
+  (let* ((f (apply generator parameters))
+         (time (benchmark (20) (apply f inputs))))
+    (prog1 time
+           (format t " ~a (sec). " time))))
 
-(defun search-best-unrolling (generator)
+(defun search-best-unrolling (generator &rest inputs)
   (let ((q (make-pqueue #'< :key-type 'float :value-type 'list))
         (close nil))
-    (format t "~&testing ~a ..." '(1 1 1))
-    (let* ((f (funcall #'generator 1 1 1))
-           (basetime (benchmark (10) (funcall f *ma* *mb* *mc*))))
-      (format t " ~a (sec). " basetime)
+    (let ((basetime (evaluate-unrolling generator inputs '(1 1 1))))
       (push (cons '(1 1 1) basetime) close)
       (pqueue-push '(1 1 1) basetime q))
     (iter (until (pqueue-empty-p q))
@@ -34,9 +34,7 @@
                 (when (member new-parameters close :key #'car :test #'equal)
                   ;; duplicate detection
                   (next-iteration))
-                (format t "~&testing ~a ..." new-parameters)
-                (for newtime = (apply #'evaluate-unrolling new-parameters))
-                (format t " ~a (sec). " newtime)
+                (for newtime = (evaluate-unrolling generator inputs new-parameters))
                 (push (cons new-parameters newtime) close)
                 (for (time . best-parent) =
                      (iter (for parent in (parents new-parameters))
