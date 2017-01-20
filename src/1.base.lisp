@@ -92,3 +92,59 @@
                   result-form)))))
 
 
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defmacro compile-time-type-of (&rest args &environment env)
+    (iter (for arg in args)
+          (check-type arg symbol)
+          (format t "~&type of ~a: ~a~%" arg (multiple-value-list (sb-cltl2:variable-information arg env))))))
+
+;; this was not so useful in practice...
+(defmacro dotimes-unroll3 (((var &optional (delta (gensym "D"))) (count unroll) &optional result)
+                           (&body update)
+                           &body body
+                           &environment env)
+  (with-gensyms (quat mod nth-loop)
+    (let ((unroll (macroexpand unroll env)))
+      `(multiple-value-bind (,quat ,mod) (floor ,count ,unroll)
+         (declare (type fixnum ,quat)
+                  (type (mod ,unroll) ,mod))
+         (symbol-macrolet ((,delta ,unroll))
+           (dotimes (,nth-loop ,quat)
+             (declare (ignorable ,nth-loop))
+             (dotimes-inline (,var ,unroll)
+               ,@body)
+             ,@update))
+         (symbol-macrolet ((,delta 1)
+                           (,var 0))
+           (dotimes (,nth-loop ,mod)
+             (declare (type (mod ,unroll) ,var))
+             ,@body
+             ,@update))
+         ,result))))
+
+;; much simpler syntax
+(defmacro dotimes-unroll4 ((base offset
+                            count unroll
+                            &optional result)
+                           &body body
+                           &environment env)
+  (with-gensyms (quat mod nth-loop)
+    (let ((unroll (macroexpand unroll env))
+          (delta (gensym "D")))
+      `(let ((,base 0))
+         (declare (fixnum ,base))
+         (multiple-value-bind (,quat ,mod) (floor ,count ,unroll)
+           (declare (fixnum ,quat)
+                    ((mod ,unroll) ,mod))
+           (symbol-macrolet ((,delta ,unroll))
+             (dotimes (,nth-loop ,quat)
+               (declare (ignorable ,nth-loop))
+               (dotimes-inline (,offset ,unroll)
+                 ,@body)
+               (incf ,base ,delta)))
+           (symbol-macrolet ((,delta 1)
+                             (,offset 0))
+             (dotimes (,nth-loop ,mod)
+               ,@body
+               (incf ,base ,delta)))
+           ,result)))))
